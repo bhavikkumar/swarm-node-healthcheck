@@ -32,6 +32,7 @@ install:
 
 script:
 - go vet -x .
+- go test -v ./...
 - docker build -t $REPO:$TAG -f Dockerfile .
 
 after_success:
