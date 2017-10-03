@@ -31,7 +31,8 @@ install:
   - glide install
 
 script:
-- go vet -x .
+- go vet -x ./...
+- go build -v ./...
 - go test -v ./...
 - docker build -t $REPO:$TAG -f Dockerfile .
 
