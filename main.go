@@ -52,7 +52,8 @@ func main() {
 	<-stopChan // wait for SIGINT
 	log.Info().Msg("Shutting down server...")
 	// shut down gracefully, but wait no longer than 5 seconds before halting
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+  defer cancel()
   cli.Close()
 	srv.Shutdown(ctx)
 
