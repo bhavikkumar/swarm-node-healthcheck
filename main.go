@@ -1,19 +1,33 @@
 package main
 
 import (
-  "net/http"
+  "context"
+	"net/http"
+  "os"
+  "os/signal"
+  "time"
   "github.com/rs/zerolog"
   "github.com/rs/zerolog/log"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
-	"golang.org/x/net/context"
+  "github.com/docker/docker/api/types/swarm"
+  "github.com/docker/docker/client"
 )
 
 func main() {
   zerolog.SetGlobalLevel(zerolog.InfoLevel)
+  cli, err := client.NewEnvClient()
+  if err != nil {
+    log.Error().Err(err).Msg("Unable to create docker client")
+    os.Exit(1)
+  }
 
-  http.HandleFunc("/ishealthy", func(w http.ResponseWriter, r *http.Request) {
-    status, err := isNodeHealthy()
+  // subscribe to SIGINT signals
+  stopChan := make(chan os.Signal)
+  signal.Notify(stopChan, os.Interrupt)
+
+  mux := http.NewServeMux()
+
+  mux.Handle("/ishealthy", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    status, err := isNodeHealthy(cli)
     if err != nil {
       http.Error(w, "", http.StatusInternalServerError)
       return
@@ -24,17 +38,29 @@ func main() {
     } else {
       http.Error(w, "Node is not ready", http.StatusServiceUnavailable)
     }
-  })
-  log.Fatal().Err(http.ListenAndServe(":44444", nil))
+  }))
+
+  srv := &http.Server{Addr: ":44444", Handler: mux}
+
+  go func() {
+		// service connections
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatal().Err(err)
+		}
+	}()
+
+	<-stopChan // wait for SIGINT
+	log.Info().Msg("Shutting down server...")
+	// shut down gracefully, but wait no longer than 5 seconds before halting
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+  defer cancel()
+  cli.Close()
+	srv.Shutdown(ctx)
+
+	log.Info().Msg("Server gracefully stopped")
 }
 
-func isNodeHealthy() (bool, error) {
-  cli, err := client.NewEnvClient()
-  if err != nil {
-    log.Error().Err(err).Msg("Unable to create docker client")
-    return false, err
-  }
-
+func isNodeHealthy(cli *client.Client) (bool, error) {
   info, err := cli.Info(context.Background())
   if err != nil {
     log.Error().Err(err).Msg("Unable to get docker information, is docker running?")
