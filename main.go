@@ -18,12 +18,12 @@ func main() {
   var gracefulStop = make(chan os.Signal)
   signal.Notify(gracefulStop, os.Interrupt)
 
-  srv := createHttpServer()
-  go startServer(srv)
-  shutdownServer(gracefulStop, srv)
+  srv := CreateHttpServer()
+  go StartServer(srv)
+  ShutdownServer(gracefulStop, srv)
 }
 
-func shutdownServer(haltSignal <-chan os.Signal, srv *http.Server) {
+func ShutdownServer(haltSignal <-chan os.Signal, srv *http.Server) {
   <-haltSignal
   log.Info().Msg("Shutting down server...")
   // shut down gracefully, but wait no longer than 30 seconds before halting
@@ -33,17 +33,17 @@ func shutdownServer(haltSignal <-chan os.Signal, srv *http.Server) {
 	log.Info().Msg("Server gracefully stopped")
 }
 
-func startServer(srv *http.Server) {
+func StartServer(srv *http.Server) {
   log.Fatal().Err(srv.ListenAndServe())
 }
 
-func createHttpServer() *http.Server {
+func CreateHttpServer() *http.Server {
   mux := http.NewServeMux()
-  mux.Handle("/ishealthy", http.HandlerFunc(handleIsHealthy))
+  mux.Handle("/ishealthy", http.HandlerFunc(HandleHealthCheck))
   return &http.Server{Addr: ":44444", Handler: mux}
 }
 
-func handleIsHealthy(w http.ResponseWriter, r *http.Request) {
+func HandleHealthCheck(w http.ResponseWriter, r *http.Request) {
   cli, err := client.NewEnvClient()
   defer cli.Close()
   if err != nil {
@@ -52,7 +52,7 @@ func handleIsHealthy(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  status, err := isNodeHealthy(cli)
+  status, err := IsNodeHealthy(cli)
   if err != nil {
     http.Error(w, "", http.StatusInternalServerError)
     return
@@ -65,7 +65,7 @@ func handleIsHealthy(w http.ResponseWriter, r *http.Request) {
   }
 }
 
-func isNodeHealthy(cli client.SystemAPIClient) (bool, error) {
+func IsNodeHealthy(cli client.SystemAPIClient) (bool, error) {
   info, err := cli.Info(context.Background())
   if err != nil {
     log.Error().Err(err).Msg("Unable to get docker information, is docker running?")
