@@ -14,60 +14,65 @@ import (
 
 func main() {
   zerolog.SetGlobalLevel(zerolog.InfoLevel)
-  cli, err := client.NewEnvClient()
-  if err != nil {
-    log.Error().Err(err).Msg("Unable to create docker client")
-    os.Exit(1)
-  }
 
-  // subscribe to SIGINT signals
-  stopChan := make(chan os.Signal)
-  signal.Notify(stopChan, os.Interrupt)
+  var gracefulStop = make(chan os.Signal)
+  signal.Notify(gracefulStop, os.Interrupt)
 
-  mux := http.NewServeMux()
+  srv := CreateHttpServer()
+  go StartServer(srv)
+  ShutdownServer(gracefulStop, srv)
+}
 
-  mux.Handle("/ishealthy", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    status, err := isNodeHealthy(cli)
-    if err != nil {
-      http.Error(w, "", http.StatusInternalServerError)
-      return
-    }
-
-    if status {
-      w.WriteHeader(http.StatusNoContent)
-    } else {
-      http.Error(w, "Node is not ready", http.StatusServiceUnavailable)
-    }
-  }))
-
-  srv := &http.Server{Addr: ":44444", Handler: mux}
-
-  go func() {
-		// service connections
-		if err := srv.ListenAndServe(); err != nil {
-			log.Fatal().Err(err)
-		}
-	}()
-
-	<-stopChan // wait for SIGINT
-	log.Info().Msg("Shutting down server...")
-	// shut down gracefully, but wait no longer than 5 seconds before halting
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func ShutdownServer(haltSignal <-chan os.Signal, srv *http.Server) {
+  <-haltSignal
+  log.Info().Msg("Shutting down server...")
+  // shut down gracefully, but wait no longer than 30 seconds before halting
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
   defer cancel()
-  cli.Close()
 	srv.Shutdown(ctx)
-
 	log.Info().Msg("Server gracefully stopped")
 }
 
-func isNodeHealthy(cli *client.Client) (bool, error) {
+func StartServer(srv *http.Server) {
+  log.Fatal().Err(srv.ListenAndServe())
+}
+
+func CreateHttpServer() *http.Server {
+  mux := http.NewServeMux()
+  mux.Handle("/ishealthy", http.HandlerFunc(HandleHealthCheck))
+  return &http.Server{Addr: ":44444", Handler: mux}
+}
+
+func HandleHealthCheck(w http.ResponseWriter, r *http.Request) {
+  cli, err := client.NewEnvClient()
+  defer cli.Close()
+  if err != nil {
+    log.Error().Err(err).Msg("Unable to create docker client")
+    http.Error(w, "", http.StatusInternalServerError)
+    return
+  }
+
+  status, err := IsNodeHealthy(cli)
+  if err != nil {
+    http.Error(w, "", http.StatusInternalServerError)
+    return
+  }
+
+  if status {
+    w.WriteHeader(http.StatusNoContent)
+  } else {
+    http.Error(w, "Node is not ready", http.StatusServiceUnavailable)
+  }
+}
+
+func IsNodeHealthy(cli client.SystemAPIClient) (bool, error) {
   info, err := cli.Info(context.Background())
   if err != nil {
     log.Error().Err(err).Msg("Unable to get docker information, is docker running?")
     return false, err
   }
 
-  if info.Swarm.Cluster != nil && len(info.Swarm.NodeID) != 0 && len(info.Swarm.Cluster.ID) != 0 && info.Swarm.LocalNodeState == swarm.LocalNodeStateActive {
+  if len(info.Swarm.NodeID) != 0 && len(info.Swarm.Cluster.ID) != 0 && info.Swarm.LocalNodeState == swarm.LocalNodeStateActive {
     log.Info().Msgf("Swarm ID %s, Node ID %s, Swarm State %s", info.Swarm.Cluster.ID, info.Swarm.NodeID, info.Swarm.LocalNodeState)
     return true, nil
   }
