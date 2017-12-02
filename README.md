@@ -2,9 +2,9 @@
 Simple HTTP server written in Go which uses the Docker SDK to check if the current server is correctly functioning inside the swarm cluster.
 
 ## Building the project
-This project uses glide so it must be on your path to begin with.
+This project uses dep so it must be on your path to begin with.
 ```
-glide i
+dep ensure
 go build
 docker build -t swarm-node-healthcheck
 ```
