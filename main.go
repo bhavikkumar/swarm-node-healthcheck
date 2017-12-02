@@ -72,8 +72,8 @@ func IsNodeHealthy(cli client.SystemAPIClient) (bool, error) {
     return false, err
   }
 
-  if len(info.Swarm.NodeID) != 0 && len(info.Swarm.Cluster.ID) != 0 && info.Swarm.LocalNodeState == swarm.LocalNodeStateActive {
-    log.Info().Msgf("Swarm ID %s, Node ID %s, Swarm State %s", info.Swarm.Cluster.ID, info.Swarm.NodeID, info.Swarm.LocalNodeState)
+  if len(info.Swarm.NodeID) != 0 && info.Swarm.LocalNodeState == swarm.LocalNodeStateActive {
+    log.Info().Msgf("Node ID %s, Swarm State %s", info.Swarm.NodeID, info.Swarm.LocalNodeState)
     return true, nil
   }
   log.Info().Msgf("Swarm State %s", info.Swarm.LocalNodeState)
